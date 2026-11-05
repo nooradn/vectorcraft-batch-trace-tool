@@ -10,6 +10,8 @@ ENV/
 
 # Output folders & files
 vectorcraft_files/
+jpg/
+png/
 *.vectorcraft
 *.svg
 *.png

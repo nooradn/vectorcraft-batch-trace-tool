@@ -14,6 +14,7 @@ An automated batch vectorization and image post-processing tool powered by the *
 - **Smart Border Trimming:** Tightly crops empty margins around the illustration bounds before resizing.
 - **Proportional Scaling:** Resizes artwork so its shorter side reaches a target size (default: `3000 px`), preserving the original aspect ratio without distortion.
 - **Custom Canvas Margins:** Adds padding on each side (default: `500 px`), guaranteeing a final canvas of at least **`4000 px`** on the shorter side, and **`>= 4000 px`** on the longer side.
+- **Post-Trace Raster Rendering (JPG / PNG):** Interactive prompt or CLI flags to automatically render generated SVGs into high-res JPGs (white background, quality 95) or transparent PNGs using multithreaded ImageMagick (`magick`) or VectorCraft CLI.
 - **Project File Organization:** Automatically moves and isolates `.vectorcraft` project files into a dedicated `vectorcraft_files/` folder, keeping your output directory clean with only the final `.svg` vectors.
 - **Windows Explorer Friendly:**
   - Double-click `batch_vectorize.py` or `batch_vectorize.bat` to automatically scan and process all `*.jpg`, `*.jpeg`, and `*.png` images in the directory.
@@ -33,6 +34,8 @@ An automated batch vectorization and image post-processing tool powered by the *
      - System `PATH`
      - macOS/Linux default install locations
    - You can also specify a custom binary location via the `--cli` argument.
+3. *(Optional)* **[ImageMagick](https://imagemagick.org/)** (`magick` in `PATH`):
+   - Used for multithreaded SVG to JPG/PNG raster conversion with custom background color and quality settings. If not found, the tool automatically falls back to VectorCraft CLI for rendering.
 
 ---
 
@@ -77,21 +80,27 @@ python batch_vectorize.py *.jpg *.png
 | `--padding` | `float` | `500.0` | Margin (in px) added to each side (`top`, `bottom`, `left`, `right`). |
 | `--preset` | `str` | `Black and White Logo` | VectorCraft tracing preset (e.g. `Line Art`, `Auto Color`, `Silhouettes`). |
 | `--format` | `choice` | `both` | Formats to export: `svg`, `vectorcraft`, or `both`. |
-| `--png-preview` | `flag` | `False` | Also render and save a raster `.png` preview. |
+| `--render` | `choice` | *prompt (interactive) / none* | Post-trace raster render mode: `prompt`, `jpg`, `png`, `both`, `none`. |
+| `--raster-quality` | `int` | `95` | JPEG quality (1–100) for JPG raster outputs. |
+| `--raster-bg` | `str` | `white` | Canvas background color for transparent SVGs in JPG format. |
+| `--workers` | `int` | `min(8, CPUs)` | Parallel worker threads for rendering raster images. |
 | `--force-square` | `flag` | `False` | Force a 1:1 square canvas even if artwork is rectangular. |
 | `--cli` | `path` | *Auto-detected* | Custom path to the `vectorcraft-cli` executable. |
 
 ### Example CLI Usages:
 
 ```bash
-# Custom output directory and SVG only
-python batch_vectorize.py "input_folder" --out-dir "dist/vectors" --format svg
+# Custom output directory, SVG only, auto-render to JPG
+python batch_vectorize.py "input_folder" --out-dir "dist/vectors" --format svg --render jpg
 
-# Larger art with 800px padding and a PNG preview
-python batch_vectorize.py "logo.png" --min-art-size 4000 --padding 800 --png-preview
+# Render both JPG and PNG with 8 parallel worker threads
+python batch_vectorize.py *.jpg --render both --workers 8
 
 # Force 1:1 square canvas (e.g., 4000x4000 px)
 python batch_vectorize.py "badge.jpg" --force-square
+
+# Standalone SVG to JPG conversion using the included utility
+python render_svg_to_jpg.py --input "dist/vectors" --quality 95 --workers 8
 ```
 
 ---
@@ -121,6 +130,7 @@ flowchart LR
 vectorcraft-batch-trace-tool/
 ├── batch_vectorize.py       # Main Python batch processing script
 ├── batch_vectorize.bat      # Windows batch launcher (double-click / drag & drop)
+├── render_svg_to_jpg.py     # Standalone multithreaded SVG -> JPG renderer
 ├── README.md                # Documentation
 ├── LICENSE                  # MIT License
 └── .gitignore               # Git ignore configuration

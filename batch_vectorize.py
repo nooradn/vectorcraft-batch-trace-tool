@@ -3,7 +3,9 @@
 VectorCraft Batch Trace Tool
 ============================
 Automated vectorization, trimming, proportional scaling, and canvas padding
-for raster images using the VectorCraft CLI engine.
+for raster images using the VectorCraft CLI engine. Includes an optional
+post-trace raster rendering step (SVG -> JPG/PNG) powered by ImageMagick
+or VectorCraft CLI.
 
 Credits:
   Built on top of VectorCraft by ArtCraft
@@ -22,6 +24,7 @@ import argparse
 import tempfile
 import subprocess
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- Windows Double-Click & Encoding Fixes ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -86,9 +89,10 @@ def move_existing_vectorcraft_files(folder, vc_folder_name="vectorcraft_files"):
 
 def process_image(cli_path, input_path, output_dir=None, vc_dir_name="vectorcraft_files",
                   min_art_size=3000.0, padding=500.0, preset="Black and White Logo",
-                  out_format="both", png_preview=False, force_square=False):
+                  out_format="both", force_square=False):
     """
     Vectorize an image, trim empty borders, scale proportionally, and pad the artboard.
+    Returns (success: bool, svg_path: str or None).
     """
     input_path = os.path.abspath(input_path)
     base_name = Path(input_path).stem
@@ -120,13 +124,13 @@ def process_image(cli_path, input_path, output_dir=None, vc_dir_name="vectorcraf
         )
         if res1.returncode != 0:
             print(f"  [Error] Step 1 trace failed for {input_path}:\n{res1.stderr or res1.stdout}", file=sys.stderr)
-            return False
+            return False, None
 
         # Step 2: Read trimmed bounding dimensions
         res_info = subprocess.run([cli_path, "info", temp_vc], capture_output=True, text=True)
         if res_info.returncode != 0:
             print(f"  [Error] Failed to read info for {temp_vc}", file=sys.stderr)
-            return False
+            return False, None
 
         try:
             info_data = json.loads(res_info.stdout)
@@ -134,11 +138,11 @@ def process_image(cli_path, input_path, output_dir=None, vc_dir_name="vectorcraf
             orig_w, orig_h = float(rect[2]), float(rect[3])
         except Exception as e:
             print(f"  [Error] Could not parse artboard bounds: {e}", file=sys.stderr)
-            return False
+            return False, None
 
         if orig_w <= 0 or orig_h <= 0:
             print(f"  [Error] Invalid bounds ({orig_w} x {orig_h})", file=sys.stderr)
-            return False
+            return False, None
 
         # Step 3: Compute proportional scaling and padded artboard dimensions
         if force_square:
@@ -168,7 +172,6 @@ def process_image(cli_path, input_path, output_dir=None, vc_dir_name="vectorcraf
 
         target_svg = os.path.join(parent_dir, f"{base_name}.svg")
         target_vc = os.path.join(vc_dir, f"{base_name}.vectorcraft")
-        target_png = os.path.join(parent_dir, f"{base_name}.png")
 
         run_args = [cli_path, "run", "--in", temp_vc, "--commands", cmd2_path]
         if out_format in ("svg", "both"):
@@ -179,16 +182,115 @@ def process_image(cli_path, input_path, output_dir=None, vc_dir_name="vectorcraf
         res2 = subprocess.run(run_args, capture_output=True, text=True)
         if res2.returncode != 0:
             print(f"  [Error] Step 2 transform failed for {input_path}:\n{res2.stderr or res2.stdout}", file=sys.stderr)
-            return False
-
-        if png_preview and os.path.isfile(target_svg):
-            subprocess.run([cli_path, "convert", target_svg, target_png], capture_output=True)
+            return False, None
 
         print(f"  [Success] {base_name}: trimmed -> art {art_w:.1f}x{art_h:.1f} -> canvas {board_w:.1f}x{board_h:.1f} px (padding {padding} px)")
         print(f"            SVG: {target_svg}")
         if out_format in ("vectorcraft", "both"):
             print(f"            VectorCraft: {target_vc}")
-        return True
+
+        return True, (target_svg if os.path.isfile(target_svg) else None)
+
+
+def render_single_svg(svg_path, out_format, out_dir, quality=95, background="white", cli_path=None):
+    """
+    Render a single SVG to JPG or PNG using ImageMagick (magick) with fallback to vectorcraft-cli.
+    """
+    base_name = Path(svg_path).stem
+    ext = out_format.lower().lstrip(".")
+    out_path = os.path.join(out_dir, f"{base_name}.{ext}")
+
+    has_magick = bool(shutil.which("magick"))
+
+    if has_magick:
+        cmd = ["magick"]
+        if ext in ("jpg", "jpeg"):
+            cmd.extend(["-background", background, svg_path, "-flatten", "-quality", str(quality), out_path])
+        else:  # png
+            cmd.extend(["-background", "none", svg_path, out_path])
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            return False, svg_path, res.stderr.strip()
+        return True, out_path, None
+
+    # Fallback to VectorCraft CLI
+    if cli_path and os.path.isfile(cli_path):
+        res = subprocess.run([cli_path, "convert", svg_path, out_path], capture_output=True, text=True)
+        if res.returncode != 0:
+            return False, svg_path, res.stderr.strip()
+        return True, out_path, None
+
+    return False, svg_path, "Neither ImageMagick ('magick') nor VectorCraft CLI found for rendering."
+
+
+def batch_render_svgs(svg_paths, formats, quality=95, background="white", workers=None, cli_path=None):
+    """
+    Render a list of SVGs to JPG and/or PNG using a thread pool.
+    """
+    if not svg_paths or not formats:
+        return
+
+    workers = workers or min(8, os.cpu_count() or 4)
+    tasks = []
+
+    for svg in svg_paths:
+        parent = os.path.dirname(svg)
+        for fmt in formats:
+            sub_dir = os.path.join(parent, fmt)
+            os.makedirs(sub_dir, exist_ok=True)
+            tasks.append((svg, fmt, sub_dir))
+
+    total = len(tasks)
+    print(f"\nRendering {len(svg_paths)} SVG(s) into {', '.join(f.upper() for f in formats)} ({total} file(s) total)...")
+    print(f"Workers: {workers} | Engine: {'ImageMagick (magick)' if shutil.which('magick') else 'VectorCraft CLI'}")
+    print("-" * 50)
+
+    completed = 0
+    failed = []
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(render_single_svg, svg, fmt, out_dir, quality, background, cli_path): (svg, fmt)
+            for svg, fmt, out_dir in tasks
+        }
+
+        for future in as_completed(futures):
+            success, path, err = future.result()
+            completed += 1
+            if success:
+                if completed % 10 == 0 or completed == total:
+                    print(f"  Progress: {completed}/{total} completed...")
+            else:
+                orig_svg, fmt = futures[future]
+                print(f"  [Error] Failed to render {os.path.basename(orig_svg)} to {fmt}: {err}", file=sys.stderr)
+                failed.append((orig_svg, err))
+
+    print("-" * 50)
+    print(f"Rendering complete! Successfully generated: {completed - len(failed)}/{total} file(s).")
+
+
+def prompt_render_choice():
+    """Interactive prompt asking the user if they wish to render SVGs into JPG/PNG."""
+    print("\n" + "=" * 50)
+    print("Render modified SVGs to raster images (JPG / PNG)?")
+    print("  [1] Render to JPG (white background, quality 95)")
+    print("  [2] Render to PNG (transparent)")
+    print("  [3] Render both JPG & PNG")
+    print("  [0 / Enter] Skip rendering")
+    print("=" * 50)
+
+    try:
+        choice = input("Choose option [0-3] (default: 0): ").strip()
+    except Exception:
+        return []
+
+    if choice in ("1", "jpg", "JPG"):
+        return ["jpg"]
+    elif choice in ("2", "png", "PNG"):
+        return ["png"]
+    elif choice in ("3", "both", "BOTH"):
+        return ["jpg", "png"]
+    return []
 
 
 def collect_images(paths=None, scan_dir=None):
@@ -225,7 +327,7 @@ def main():
     is_interactive_double_click = (len(sys.argv) <= 1)
 
     parser = argparse.ArgumentParser(
-        description="Batch vectorize images with VectorCraft, trim padding, scale proportionally, and add custom margins."
+        description="Batch vectorize images with VectorCraft, trim padding, scale proportionally, and optionally render to JPG/PNG."
     )
     parser.add_argument("inputs", nargs="*", help="Image files, folders, or wildcards to process (default: scans current folder).")
     parser.add_argument("--cli", default=None, help="Path to vectorcraft-cli executable if not in default location.")
@@ -234,9 +336,19 @@ def main():
     parser.add_argument("--min-art-size", type=float, default=3000.0, help="Target size for the smaller side of the art (default: 3000).")
     parser.add_argument("--padding", type=float, default=500.0, help="Padding on each side in px (default: 500, so min canvas side = 4000).")
     parser.add_argument("--preset", default="Black and White Logo", help="VectorCraft tracing preset (default: 'Black and White Logo').")
-    parser.add_argument("--format", choices=["svg", "vectorcraft", "both"], default="both", help="Output formats to export (default: both).")
-    parser.add_argument("--png-preview", action="store_true", help="Also generate a rendered PNG preview.")
+    parser.add_argument("--format", choices=["svg", "vectorcraft", "both"], default="both", help="Vector formats to export (default: both).")
     parser.add_argument("--force-square", action="store_true", help="Force 1:1 square canvas even if artwork is rectangular.")
+
+    # Post-trace raster rendering options
+    parser.add_argument(
+        "--render",
+        choices=["prompt", "jpg", "png", "both", "none"],
+        default=None,
+        help="Post-trace raster render mode (default: 'prompt' if interactive, else 'none')."
+    )
+    parser.add_argument("--raster-quality", type=int, default=95, help="JPEG quality 1-100 (default: 95).")
+    parser.add_argument("--raster-bg", default="white", help="Canvas background color for transparent SVGs in JPG (default: white).")
+    parser.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 4), help="Parallel worker threads for rendering.")
 
     args = parser.parse_args()
 
@@ -269,10 +381,10 @@ def main():
     print(f"Settings: Min Art Size={args.min_art_size}px, Padding={args.padding}px (Min Canvas={args.min_art_size + args.padding * 2}px), Preset='{args.preset}'")
     print(f"VectorCraft projects folder: '{args.vc_dir}'\n")
 
-    successful = 0
+    successful_svgs = []
     for idx, img_path in enumerate(images, 1):
         print(f"[{idx}/{len(images)}] Processing: {os.path.basename(img_path)}...")
-        ok = process_image(
+        ok, svg_path = process_image(
             cli_path=cli_path,
             input_path=img_path,
             output_dir=args.out_dir,
@@ -281,13 +393,37 @@ def main():
             padding=args.padding,
             preset=args.preset,
             out_format=args.format,
-            png_preview=args.png_preview,
             force_square=args.force_square
         )
-        if ok:
-            successful += 1
+        if ok and svg_path:
+            successful_svgs.append(svg_path)
 
-    print(f"\nCompleted! Successfully processed {successful}/{len(images)} image(s).")
+    print(f"\nTracing complete! Successfully processed {len(successful_svgs)}/{len(images)} image(s).")
+
+    # Determine render mode
+    render_mode = args.render
+    if render_mode is None:
+        render_mode = "prompt" if is_interactive_double_click else "none"
+
+    render_formats = []
+    if render_mode == "prompt" and successful_svgs:
+        render_formats = prompt_render_choice()
+    elif render_mode == "jpg":
+        render_formats = ["jpg"]
+    elif render_mode == "png":
+        render_formats = ["png"]
+    elif render_mode == "both":
+        render_formats = ["jpg", "png"]
+
+    if render_formats and successful_svgs:
+        batch_render_svgs(
+            svg_paths=successful_svgs,
+            formats=render_formats,
+            quality=args.raster_quality,
+            background=args.raster_bg,
+            workers=args.workers,
+            cli_path=cli_path
+        )
 
     if is_interactive_double_click:
         try:
