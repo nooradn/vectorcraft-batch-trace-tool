@@ -10,7 +10,7 @@ An automated batch vectorization and image post-processing tool powered by the *
 
 ## Features
 
-- **Automated Vector Tracing:** Converts raster images into clean, production-grade vector outlines via VectorCraft's image trace engine.
+- **High-Performance Concurrent Tracing:** Multithreaded batch vectorization defaulting to `CPU count - 2` threads (e.g. 10 threads on a 12-core CPU), dramatically cutting down processing time.
 - **Smart Border Trimming:** Tightly crops empty margins around the illustration bounds before resizing.
 - **Proportional Scaling:** Resizes artwork so its shorter side reaches a target size (default: `3000 px`), preserving the original aspect ratio without distortion.
 - **Custom Canvas Margins:** Adds padding on each side (default: `500 px`), guaranteeing a final canvas of at least **`4000 px`** on the shorter side, and **`>= 4000 px`** on the longer side.
@@ -79,6 +79,7 @@ python batch_vectorize.py *.jpg *.png
 | `--out-dir` | `path` | *Same as image* | Destination directory for output files. |
 | `--svg-dir` | `str` | `svg` | Subfolder name for `.svg` files. |
 | `--vc-dir` | `str` | `vectorcraft_files` | Subfolder name for `.vectorcraft` project files. |
+| `--trace-workers` | `int` | `CPUs - 2` | Parallel worker threads for SVG tracing (default: CPU count - 2). |
 | `--min-art-size` | `float` | `3000.0` | Target size (in px) for the shorter side of the artwork. |
 | `--padding` | `float` | `500.0` | Margin (in px) added to each side (`top`, `bottom`, `left`, `right`). |
 | `--preset` | `str` | `Black and White Logo` | VectorCraft tracing preset (e.g. `Line Art`, `Auto Color`, `Silhouettes`). |

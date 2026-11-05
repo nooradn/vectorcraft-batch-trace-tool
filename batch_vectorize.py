@@ -92,7 +92,7 @@ def process_image(cli_path, input_path, output_dir=None, svg_dir_name="svg",
                   preset="Black and White Logo", out_format="both", force_square=False):
     """
     Vectorize an image, trim empty borders, scale proportionally, and pad the artboard.
-    Returns (success: bool, svg_path: str or None).
+    Returns (success: bool, svg_path: str or None, message: str).
     """
     input_path = os.path.abspath(input_path)
     base_name = Path(input_path).stem
@@ -127,26 +127,22 @@ def process_image(cli_path, input_path, output_dir=None, svg_dir_name="svg",
             capture_output=True, text=True
         )
         if res1.returncode != 0:
-            print(f"  [Error] Step 1 trace failed for {input_path}:\n{res1.stderr or res1.stdout}", file=sys.stderr)
-            return False, None
+            return False, None, f"Step 1 trace failed:\n{res1.stderr or res1.stdout}"
 
         # Step 2: Read trimmed bounding dimensions
         res_info = subprocess.run([cli_path, "info", temp_vc], capture_output=True, text=True)
         if res_info.returncode != 0:
-            print(f"  [Error] Failed to read info for {temp_vc}", file=sys.stderr)
-            return False, None
+            return False, None, f"Failed to read info for {temp_vc}"
 
         try:
             info_data = json.loads(res_info.stdout)
             rect = info_data["artboards"][0]["rect"]
             orig_w, orig_h = float(rect[2]), float(rect[3])
         except Exception as e:
-            print(f"  [Error] Could not parse artboard bounds: {e}", file=sys.stderr)
-            return False, None
+            return False, None, f"Could not parse artboard bounds: {e}"
 
         if orig_w <= 0 or orig_h <= 0:
-            print(f"  [Error] Invalid bounds ({orig_w} x {orig_h})", file=sys.stderr)
-            return False, None
+            return False, None, f"Invalid bounds ({orig_w} x {orig_h})"
 
         # Step 3: Compute proportional scaling and padded artboard dimensions
         if force_square:
@@ -185,12 +181,10 @@ def process_image(cli_path, input_path, output_dir=None, svg_dir_name="svg",
 
         res2 = subprocess.run(run_args, capture_output=True, text=True)
         if res2.returncode != 0:
-            print(f"  [Error] Step 2 transform failed for {input_path}:\n{res2.stderr or res2.stdout}", file=sys.stderr)
-            return False, None
+            return False, None, f"Step 2 transform failed:\n{res2.stderr or res2.stdout}"
 
-        print(f"  [Success] {base_name}: trimmed -> art {art_w:.1f}x{art_h:.1f} -> canvas {board_w:.1f}x{board_h:.1f} px (padding {padding} px)")
-
-        return True, (target_svg if os.path.isfile(target_svg) else None)
+        msg = f"{base_name}: trimmed -> art {art_w:.1f}x{art_h:.1f} -> canvas {board_w:.1f}x{board_h:.1f} px (padding {padding} px)"
+        return True, (target_svg if os.path.isfile(target_svg) else None), msg
 
 
 def render_single_svg(svg_path, out_format, out_dir, quality=95, background="white", cli_path=None):
@@ -383,6 +377,10 @@ def main():
     )
     parser.add_argument("inputs", nargs="*", help="Image files, folders, or wildcards to process (default: scans current folder).")
     parser.add_argument("--cli", default=None, help="Path to vectorcraft-cli executable if not in default location.")
+    default_threads = max(1, (os.cpu_count() or 4) - 2)
+
+    parser.add_argument("--trace-workers", type=int, default=default_threads,
+                        help=f"Parallel worker threads for tracing (default: CPU count - 2 = {default_threads}).")
     parser.add_argument("--out-dir", default=None, help="Custom output directory (default: same as input image).")
     parser.add_argument("--svg-dir", default="svg", help="Subfolder name for SVG files (default: 'svg').")
     parser.add_argument("--vc-dir", default="vectorcraft_files", help="Subfolder name for .vectorcraft projects (default: 'vectorcraft_files').")
@@ -405,7 +403,8 @@ def main():
     )
     parser.add_argument("--raster-quality", type=int, default=95, help="JPEG quality 1-100 (default: 95).")
     parser.add_argument("--raster-bg", default="white", help="Canvas background color for transparent SVGs in JPG (default: white).")
-    parser.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 4), help="Parallel worker threads for rendering.")
+    parser.add_argument("--workers", type=int, default=default_threads,
+                        help=f"Parallel worker threads for rendering (default: CPU count - 2 = {default_threads}).")
 
     args = parser.parse_args()
 
@@ -439,6 +438,7 @@ def main():
         sys.exit(0)
 
     print(f"Found {len(images)} image(s) to process using VectorCraft CLI ({cli_path})")
+    print(f"Threads : Tracing={args.trace_workers} threads (CPU: {os.cpu_count()} - 2) | Rendering={args.workers} threads")
     print(f"Settings: Min Art Size={args.min_art_size}px, Padding={args.padding}px (Min Canvas={args.min_art_size + args.padding * 2}px), Preset='{args.preset}'")
     print(f"Folders : SVGs -> '{args.svg_dir}/' | VectorCraft projects -> '{args.vc_dir}/'\n")
 
@@ -486,22 +486,39 @@ def main():
         if img_path not in images_to_trace and os.path.isfile(svg_p):
             successful_svgs.append(svg_p)
 
-    for idx, img_path in enumerate(images_to_trace, 1):
-        print(f"[{idx}/{len(images_to_trace)}] Processing: {os.path.basename(img_path)}...")
-        ok, svg_path = process_image(
-            cli_path=cli_path,
-            input_path=img_path,
-            output_dir=args.out_dir,
-            svg_dir_name=args.svg_dir,
-            vc_dir_name=args.vc_dir,
-            min_art_size=args.min_art_size,
-            padding=args.padding,
-            preset=args.preset,
-            out_format=args.format,
-            force_square=args.force_square
-        )
-        if ok and svg_path and svg_path not in successful_svgs:
-            successful_svgs.append(svg_path)
+    total_trace = len(images_to_trace)
+    if total_trace > 0:
+        print(f"Tracing {total_trace} image(s) concurrently using {args.trace_workers} threads...")
+        completed_trace = 0
+
+        with ThreadPoolExecutor(max_workers=args.trace_workers) as executor:
+            futures = {
+                executor.submit(
+                    process_image,
+                    cli_path=cli_path,
+                    input_path=img_path,
+                    output_dir=args.out_dir,
+                    svg_dir_name=args.svg_dir,
+                    vc_dir_name=args.vc_dir,
+                    min_art_size=args.min_art_size,
+                    padding=args.padding,
+                    preset=args.preset,
+                    out_format=args.format,
+                    force_square=args.force_square
+                ): img_path
+                for img_path in images_to_trace
+            }
+
+            for future in as_completed(futures):
+                completed_trace += 1
+                img_p = futures[future]
+                ok, svg_path, msg = future.result()
+                if ok:
+                    print(f"[{completed_trace}/{total_trace}] [Success] {msg}")
+                    if svg_path and svg_path not in successful_svgs:
+                        successful_svgs.append(svg_path)
+                else:
+                    print(f"[{completed_trace}/{total_trace}] [Error] {os.path.basename(img_p)}: {msg}", file=sys.stderr)
 
     print(f"\nTracing complete! Total available SVG(s): {len(successful_svgs)}.")
 
