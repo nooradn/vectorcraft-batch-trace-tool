@@ -14,8 +14,9 @@ An automated batch vectorization and image post-processing tool powered by the *
 - **Smart Border Trimming:** Tightly crops empty margins around the illustration bounds before resizing.
 - **Proportional Scaling:** Resizes artwork so its shorter side reaches a target size (default: `3000 px`), preserving the original aspect ratio without distortion.
 - **Custom Canvas Margins:** Adds padding on each side (default: `500 px`), guaranteeing a final canvas of at least **`4000 px`** on the shorter side, and **`>= 4000 px`** on the longer side.
+- **Duplicate Checking & Skip (No Redundant Work):** Detects if an SVG already exists before tracing. Prompts the user to skip existing files (default) or re-trace/overwrite them.
 - **Post-Trace Raster Rendering (JPG / PNG):** Interactive prompt or CLI flags to automatically render generated SVGs into high-res JPGs (white background, quality 95) or transparent PNGs using multithreaded ImageMagick (`magick`) or VectorCraft CLI.
-- **Project File Organization:** Automatically moves and isolates `.vectorcraft` project files into a dedicated `vectorcraft_files/` folder, keeping your output directory clean with only the final `.svg` vectors.
+- **Project File Organization:** Automatically isolates `.svg` exports into an `svg/` subfolder and `.vectorcraft` project files into a `vectorcraft_files/` folder, keeping your root directory clean.
 - **Windows Explorer Friendly:**
   - Double-click `batch_vectorize.py` or `batch_vectorize.bat` to automatically scan and process all `*.jpg`, `*.jpeg`, and `*.png` images in the directory.
   - Automatically fixes working directory path issues when launched from Windows Explorer.
@@ -44,9 +45,10 @@ An automated batch vectorization and image post-processing tool powered by the *
 ### 1. Windows Explorer (Double-Click)
 Place `batch_vectorize.py` (or `batch_vectorize.bat`) into any folder containing your images and double-click it. It will:
 1. Scan the folder for all `*.jpg` and `*.png` images.
-2. Vectorize and transform each image.
-3. Save output `.svg` files directly into the folder.
+2. Check if SVGs already exist (prompts to skip or re-trace).
+3. Vectorize and transform images into `svg/`.
 4. Move `.vectorcraft` project files into `vectorcraft_files/`.
+5. Optionally prompt to render the SVGs to JPG or PNG.
 
 ### 2. Drag & Drop
 Drag one or more image files (or an entire folder) directly onto `batch_vectorize.bat`.
@@ -75,11 +77,14 @@ python batch_vectorize.py *.jpg *.png
 | :--- | :--- | :--- | :--- |
 | `inputs` | `str...` | *Current Directory* | Paths to images, folders, or glob patterns. |
 | `--out-dir` | `path` | *Same as image* | Destination directory for output files. |
+| `--svg-dir` | `str` | `svg` | Subfolder name for `.svg` files. |
 | `--vc-dir` | `str` | `vectorcraft_files` | Subfolder name for `.vectorcraft` project files. |
 | `--min-art-size` | `float` | `3000.0` | Target size (in px) for the shorter side of the artwork. |
 | `--padding` | `float` | `500.0` | Margin (in px) added to each side (`top`, `bottom`, `left`, `right`). |
 | `--preset` | `str` | `Black and White Logo` | VectorCraft tracing preset (e.g. `Line Art`, `Auto Color`, `Silhouettes`). |
 | `--format` | `choice` | `both` | Formats to export: `svg`, `vectorcraft`, or `both`. |
+| `--overwrite` | `flag` | `False` | Overwrite and re-trace existing SVGs without prompting. |
+| `--skip-existing` | `flag` | `False` | Skip images that already have SVGs without prompting. |
 | `--render` | `choice` | *prompt (interactive) / none* | Post-trace raster render mode: `prompt`, `jpg`, `png`, `both`, `none`. |
 | `--raster-quality` | `int` | `95` | JPEG quality (1–100) for JPG raster outputs. |
 | `--raster-bg` | `str` | `white` | Canvas background color for transparent SVGs in JPG format. |
@@ -125,6 +130,24 @@ flowchart LR
 ---
 
 ## Directory Structure
+
+### Output Organization
+
+```text
+my_project_folder/
+├── image1.jpg
+├── image2.png
+├── svg/                     # Clean vector outputs
+│   ├── image1.svg
+│   └── image2.svg
+├── vectorcraft_files/       # Native editable VectorCraft projects
+│   ├── image1.vectorcraft
+│   └── image2.vectorcraft
+├── jpg/                     # (Optional) Rendered JPGs
+└── png/                     # (Optional) Rendered transparent PNGs
+```
+
+### Repository Structure
 
 ```text
 vectorcraft-batch-trace-tool/

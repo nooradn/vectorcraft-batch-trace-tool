@@ -9,6 +9,7 @@ venv/
 ENV/
 
 # Output folders & files
+svg/
 vectorcraft_files/
 jpg/
 png/

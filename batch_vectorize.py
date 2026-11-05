@@ -70,26 +70,26 @@ def find_vectorcraft_cli(custom_path=None):
     return None
 
 
-def move_existing_vectorcraft_files(folder, vc_folder_name="vectorcraft_files"):
-    """Organize loose .vectorcraft files into a dedicated subfolder."""
-    target_dir = os.path.join(folder, vc_folder_name)
+def move_existing_files(folder, extension, target_subfolder):
+    """Organize loose files with a given extension into a dedicated subfolder."""
+    target_dir = os.path.join(folder, target_subfolder)
     moved_count = 0
     try:
         for item in os.listdir(folder):
             item_path = os.path.join(folder, item)
-            if os.path.isfile(item_path) and item.lower().endswith(".vectorcraft"):
+            if os.path.isfile(item_path) and item.lower().endswith(extension.lower()):
                 os.makedirs(target_dir, exist_ok=True)
                 dest_path = os.path.join(target_dir, item)
                 shutil.move(item_path, dest_path)
                 moved_count += 1
     except Exception as e:
-        print(f"Warning: Could not move existing .vectorcraft files: {e}")
+        print(f"Warning: Could not move existing {extension} files: {e}")
     return moved_count
 
 
-def process_image(cli_path, input_path, output_dir=None, vc_dir_name="vectorcraft_files",
-                  min_art_size=3000.0, padding=500.0, preset="Black and White Logo",
-                  out_format="both", force_square=False):
+def process_image(cli_path, input_path, output_dir=None, svg_dir_name="svg",
+                  vc_dir_name="vectorcraft_files", min_art_size=3000.0, padding=500.0,
+                  preset="Black and White Logo", out_format="both", force_square=False):
     """
     Vectorize an image, trim empty borders, scale proportionally, and pad the artboard.
     Returns (success: bool, svg_path: str or None).
@@ -99,7 +99,11 @@ def process_image(cli_path, input_path, output_dir=None, vc_dir_name="vectorcraf
     parent_dir = output_dir or os.path.dirname(input_path)
     os.makedirs(parent_dir, exist_ok=True)
 
+    svg_dir = os.path.join(parent_dir, svg_dir_name)
     vc_dir = os.path.join(parent_dir, vc_dir_name)
+
+    if out_format in ("svg", "both"):
+        os.makedirs(svg_dir, exist_ok=True)
     if out_format in ("vectorcraft", "both"):
         os.makedirs(vc_dir, exist_ok=True)
 
@@ -170,7 +174,7 @@ def process_image(cli_path, input_path, output_dir=None, vc_dir_name="vectorcraf
         with open(cmd2_path, "w", encoding="utf-8") as f:
             json.dump(cmd2, f)
 
-        target_svg = os.path.join(parent_dir, f"{base_name}.svg")
+        target_svg = os.path.join(svg_dir, f"{base_name}.svg")
         target_vc = os.path.join(vc_dir, f"{base_name}.vectorcraft")
 
         run_args = [cli_path, "run", "--in", temp_vc, "--commands", cmd2_path]
@@ -185,7 +189,8 @@ def process_image(cli_path, input_path, output_dir=None, vc_dir_name="vectorcraf
             return False, None
 
         print(f"  [Success] {base_name}: trimmed -> art {art_w:.1f}x{art_h:.1f} -> canvas {board_w:.1f}x{board_h:.1f} px (padding {padding} px)")
-        print(f"            SVG: {target_svg}")
+        if out_format in ("svg", "both"):
+            print(f"            SVG: {target_svg}")
         if out_format in ("vectorcraft", "both"):
             print(f"            VectorCraft: {target_vc}")
 
@@ -223,7 +228,7 @@ def render_single_svg(svg_path, out_format, out_dir, quality=95, background="whi
     return False, svg_path, "Neither ImageMagick ('magick') nor VectorCraft CLI found for rendering."
 
 
-def batch_render_svgs(svg_paths, formats, quality=95, background="white", workers=None, cli_path=None):
+def batch_render_svgs(svg_paths, formats, quality=95, background="white", workers=None, cli_path=None, base_out_dir=None):
     """
     Render a list of SVGs to JPG and/or PNG using a thread pool.
     """
@@ -234,9 +239,17 @@ def batch_render_svgs(svg_paths, formats, quality=95, background="white", worker
     tasks = []
 
     for svg in svg_paths:
-        parent = os.path.dirname(svg)
+        # Save renders alongside the svg subfolder (e.g. parent/jpg, parent/png)
+        svg_parent = os.path.dirname(svg)
+        if base_out_dir:
+            root_parent = base_out_dir
+        elif os.path.basename(svg_parent).lower() in ("svg", "svg_files"):
+            root_parent = os.path.dirname(svg_parent)
+        else:
+            root_parent = svg_parent
+
         for fmt in formats:
-            sub_dir = os.path.join(parent, fmt)
+            sub_dir = os.path.join(root_parent, fmt)
             os.makedirs(sub_dir, exist_ok=True)
             tasks.append((svg, fmt, sub_dir))
 
@@ -332,12 +345,17 @@ def main():
     parser.add_argument("inputs", nargs="*", help="Image files, folders, or wildcards to process (default: scans current folder).")
     parser.add_argument("--cli", default=None, help="Path to vectorcraft-cli executable if not in default location.")
     parser.add_argument("--out-dir", default=None, help="Custom output directory (default: same as input image).")
-    parser.add_argument("--vc-dir", default="vectorcraft_files", help="Folder name for .vectorcraft projects (default: 'vectorcraft_files').")
+    parser.add_argument("--svg-dir", default="svg", help="Subfolder name for SVG files (default: 'svg').")
+    parser.add_argument("--vc-dir", default="vectorcraft_files", help="Subfolder name for .vectorcraft projects (default: 'vectorcraft_files').")
     parser.add_argument("--min-art-size", type=float, default=3000.0, help="Target size for the smaller side of the art (default: 3000).")
     parser.add_argument("--padding", type=float, default=500.0, help="Padding on each side in px (default: 500, so min canvas side = 4000).")
     parser.add_argument("--preset", default="Black and White Logo", help="VectorCraft tracing preset (default: 'Black and White Logo').")
     parser.add_argument("--format", choices=["svg", "vectorcraft", "both"], default="both", help="Vector formats to export (default: both).")
     parser.add_argument("--force-square", action="store_true", help="Force 1:1 square canvas even if artwork is rectangular.")
+
+    # Duplicate check & overwrite options
+    parser.add_argument("--overwrite", action="store_true", help="Automatically overwrite and re-trace existing SVGs without prompt.")
+    parser.add_argument("--skip-existing", action="store_true", help="Automatically skip images that already have SVGs without prompt.")
 
     # Post-trace raster rendering options
     parser.add_argument(
@@ -367,9 +385,13 @@ def main():
 
     scan_folders = {os.path.dirname(img) for img in images} if images else {SCRIPT_DIR}
     for folder in scan_folders:
-        moved = move_existing_vectorcraft_files(folder, args.vc_dir)
-        if moved > 0:
-            print(f"Moved {moved} existing .vectorcraft file(s) into '{args.vc_dir}' subfolder.")
+        # Move existing loose files into their subfolders
+        moved_vc = move_existing_files(folder, ".vectorcraft", args.vc_dir)
+        if moved_vc > 0:
+            print(f"Moved {moved_vc} existing .vectorcraft file(s) into '{args.vc_dir}' subfolder.")
+        moved_svg = move_existing_files(folder, ".svg", args.svg_dir)
+        if moved_svg > 0:
+            print(f"Moved {moved_svg} existing .svg file(s) into '{args.svg_dir}' subfolder.")
 
     if not images:
         print("No *.jpg or *.png image files found to process.")
@@ -379,15 +401,59 @@ def main():
 
     print(f"Found {len(images)} image(s) to process using VectorCraft CLI ({cli_path})")
     print(f"Settings: Min Art Size={args.min_art_size}px, Padding={args.padding}px (Min Canvas={args.min_art_size + args.padding * 2}px), Preset='{args.preset}'")
-    print(f"VectorCraft projects folder: '{args.vc_dir}'\n")
+    print(f"Folders : SVGs -> '{args.svg_dir}/' | VectorCraft projects -> '{args.vc_dir}/'\n")
+
+    # --- Pre-Trace Check for Existing SVGs ---
+    existing_svg_map = {}
+    for img_path in images:
+        base_name = Path(img_path).stem
+        parent_dir = args.out_dir or os.path.dirname(img_path)
+        svg_path = os.path.join(parent_dir, args.svg_dir, f"{base_name}.svg")
+        if os.path.isfile(svg_path):
+            existing_svg_map[img_path] = svg_path
+
+    images_to_trace = list(images)
+    if existing_svg_map:
+        count_exist = len(existing_svg_map)
+        print("=" * 50)
+        print(f"Notice: {count_exist}/{len(images)} image(s) already have an SVG in '{args.svg_dir}/'.")
+
+        retrace = False
+        if args.overwrite:
+            retrace = True
+            print("Flag --overwrite detected: will re-trace and overwrite all.")
+        elif args.skip_existing:
+            retrace = False
+            print("Flag --skip-existing detected: skipping existing SVGs.")
+        else:
+            print("  [1 / Enter] Skip existing (default)")
+            print("  [2] Re-trace and overwrite")
+            print("=" * 50)
+            try:
+                choice = input("Choose option [1-2] (default: 1): ").strip()
+            except Exception:
+                choice = ""
+            retrace = (choice == "2")
+
+        if not retrace:
+            images_to_trace = [img for img in images if img not in existing_svg_map]
+            print(f"Skipping {count_exist} already-traced file(s). {len(images_to_trace)} remaining to trace.\n")
+        else:
+            print("Re-tracing all images (overwriting existing SVGs).\n")
 
     successful_svgs = []
-    for idx, img_path in enumerate(images, 1):
-        print(f"[{idx}/{len(images)}] Processing: {os.path.basename(img_path)}...")
+    # Include existing SVGs if skipped so they can still be rendered if desired
+    for img_path, svg_p in existing_svg_map.items():
+        if img_path not in images_to_trace and os.path.isfile(svg_p):
+            successful_svgs.append(svg_p)
+
+    for idx, img_path in enumerate(images_to_trace, 1):
+        print(f"[{idx}/{len(images_to_trace)}] Processing: {os.path.basename(img_path)}...")
         ok, svg_path = process_image(
             cli_path=cli_path,
             input_path=img_path,
             output_dir=args.out_dir,
+            svg_dir_name=args.svg_dir,
             vc_dir_name=args.vc_dir,
             min_art_size=args.min_art_size,
             padding=args.padding,
@@ -395,15 +461,15 @@ def main():
             out_format=args.format,
             force_square=args.force_square
         )
-        if ok and svg_path:
+        if ok and svg_path and svg_path not in successful_svgs:
             successful_svgs.append(svg_path)
 
-    print(f"\nTracing complete! Successfully processed {len(successful_svgs)}/{len(images)} image(s).")
+    print(f"\nTracing complete! Total available SVG(s): {len(successful_svgs)}.")
 
     # Determine render mode
     render_mode = args.render
     if render_mode is None:
-        render_mode = "prompt" if is_interactive_double_click else "none"
+        render_mode = "prompt" if (is_interactive_double_click or len(sys.argv) <= 1) else "none"
 
     render_formats = []
     if render_mode == "prompt" and successful_svgs:
@@ -422,7 +488,8 @@ def main():
             quality=args.raster_quality,
             background=args.raster_bg,
             workers=args.workers,
-            cli_path=cli_path
+            cli_path=cli_path,
+            base_out_dir=args.out_dir
         )
 
     if is_interactive_double_click:
