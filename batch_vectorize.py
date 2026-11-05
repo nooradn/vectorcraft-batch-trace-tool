@@ -189,10 +189,6 @@ def process_image(cli_path, input_path, output_dir=None, svg_dir_name="svg",
             return False, None
 
         print(f"  [Success] {base_name}: trimmed -> art {art_w:.1f}x{art_h:.1f} -> canvas {board_w:.1f}x{board_h:.1f} px (padding {padding} px)")
-        if out_format in ("svg", "both"):
-            print(f"            SVG: {target_svg}")
-        if out_format in ("vectorcraft", "both"):
-            print(f"            VectorCraft: {target_vc}")
 
         return True, (target_svg if os.path.isfile(target_svg) else None)
 
