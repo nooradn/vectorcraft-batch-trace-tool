@@ -14,8 +14,8 @@ An automated batch vectorization and image post-processing tool powered by the *
 - **Smart Border Trimming:** Tightly crops empty margins around the illustration bounds before resizing.
 - **Proportional Scaling:** Resizes artwork so its shorter side reaches a target size (default: `3000 px`), preserving the original aspect ratio without distortion.
 - **Custom Canvas Margins:** Adds padding on each side (default: `500 px`), guaranteeing a final canvas of at least **`4000 px`** on the shorter side, and **`>= 4000 px`** on the longer side.
-- **Duplicate Checking & Skip (No Redundant Work):** Detects if an SVG already exists before tracing. Prompts the user to skip existing files (default) or re-trace/overwrite them.
-- **Post-Trace Raster Rendering (JPG / PNG):** Interactive prompt or CLI flags to automatically render generated SVGs into high-res JPGs (white background, quality 95) or transparent PNGs using multithreaded ImageMagick (`magick`) or VectorCraft CLI.
+- **Duplicate Checking & Skip (No Redundant Work):** Detects existing outputs before tracing and rendering. Prompts the user to skip existing files (default = render only delta/missing) or re-process/overwrite them.
+- **Post-Trace Raster Rendering (JPG / PNG):** Interactive prompt or CLI flags to automatically render generated SVGs into high-res JPGs (white background, quality 95) or transparent PNGs using multithreaded ImageMagick (`magick`) or VectorCraft CLI. Only renders missing images by default.
 - **Project File Organization:** Automatically isolates `.svg` exports into an `svg/` subfolder and `.vectorcraft` project files into a `vectorcraft_files/` folder, keeping your root directory clean.
 - **Windows Explorer Friendly:**
   - Double-click `batch_vectorize.py` or `batch_vectorize.bat` to automatically scan and process all `*.jpg`, `*.jpeg`, and `*.png` images in the directory.

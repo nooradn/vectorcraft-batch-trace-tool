@@ -224,9 +224,11 @@ def render_single_svg(svg_path, out_format, out_dir, quality=95, background="whi
     return False, svg_path, "Neither ImageMagick ('magick') nor VectorCraft CLI found for rendering."
 
 
-def batch_render_svgs(svg_paths, formats, quality=95, background="white", workers=None, cli_path=None, base_out_dir=None):
+def batch_render_svgs(svg_paths, formats, quality=95, background="white", workers=None,
+                       cli_path=None, base_out_dir=None, overwrite=False, skip_existing=False):
     """
     Render a list of SVGs to JPG and/or PNG using a thread pool.
+    Includes duplicate check so existing raster outputs can be skipped (render delta only).
     """
     if not svg_paths or not formats:
         return
@@ -249,8 +251,49 @@ def batch_render_svgs(svg_paths, formats, quality=95, background="white", worker
             os.makedirs(sub_dir, exist_ok=True)
             tasks.append((svg, fmt, sub_dir))
 
+    # --- Pre-Render Check for Existing Raster Outputs ---
+    existing_tasks = []
+    for svg, fmt, sub_dir in tasks:
+        base_name = Path(svg).stem
+        ext = fmt.lower().lstrip(".")
+        target_path = os.path.join(sub_dir, f"{base_name}.{ext}")
+        if os.path.isfile(target_path):
+            existing_tasks.append((svg, fmt, sub_dir))
+
+    if existing_tasks:
+        count_exist = len(existing_tasks)
+        print("\n" + "=" * 50)
+        print(f"Notice: {count_exist}/{len(tasks)} raster file(s) already exist in output folder(s).")
+        re_render = False
+        if overwrite:
+            re_render = True
+            print("Flag --overwrite detected: re-rendering all raster files.")
+        elif skip_existing:
+            re_render = False
+            print("Flag --skip-existing detected: skipping existing raster files.")
+        else:
+            print("  [1 / Enter] Render only missing / delta (default)")
+            print("  [2] Re-render and overwrite all")
+            print("=" * 50)
+            try:
+                choice = input("Choose option [1-2] (default: 1): ").strip()
+            except Exception:
+                choice = ""
+            re_render = (choice == "2")
+
+        if not re_render:
+            existing_set = set(existing_tasks)
+            tasks = [t for t in tasks if t not in existing_set]
+            print(f"Skipping {count_exist} already-rendered file(s). {len(tasks)} remaining to render.\n")
+        else:
+            print("Re-rendering all raster files (overwriting existing).\n")
+
+    if not tasks:
+        print("All raster files already exist in output folder(s). Nothing to render.")
+        return
+
     total = len(tasks)
-    print(f"\nRendering {len(svg_paths)} SVG(s) into {', '.join(f.upper() for f in formats)} ({total} file(s) total)...")
+    print(f"\nRendering {total} raster file(s) ({', '.join(f.upper() for f in formats)})...")
     print(f"Workers: {workers} | Engine: {'ImageMagick (magick)' if shutil.which('magick') else 'VectorCraft CLI'}")
     print("-" * 50)
 
@@ -357,8 +400,8 @@ def main():
     parser.add_argument(
         "--render",
         choices=["prompt", "jpg", "png", "both", "none"],
-        default=None,
-        help="Post-trace raster render mode (default: 'prompt' if interactive, else 'none')."
+        default="prompt",
+        help="Post-trace raster render mode (default: 'prompt')."
     )
     parser.add_argument("--raster-quality", type=int, default=95, help="JPEG quality 1-100 (default: 95).")
     parser.add_argument("--raster-bg", default="white", help="Canvas background color for transparent SVGs in JPG (default: white).")
@@ -485,7 +528,9 @@ def main():
             background=args.raster_bg,
             workers=args.workers,
             cli_path=cli_path,
-            base_out_dir=args.out_dir
+            base_out_dir=args.out_dir,
+            overwrite=args.overwrite,
+            skip_existing=args.skip_existing
         )
 
     if is_interactive_double_click:
