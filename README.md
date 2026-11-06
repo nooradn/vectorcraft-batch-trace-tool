@@ -89,7 +89,7 @@ python batch_vectorize.py *.jpg *.png
 | `--render` | `choice` | *prompt (interactive) / none* | Post-trace raster render mode: `prompt`, `jpg`, `png`, `both`, `none`. |
 | `--raster-quality` | `int` | `95` | JPEG quality (1–100) for JPG raster outputs. |
 | `--raster-bg` | `str` | `white` | Canvas background color for transparent SVGs in JPG format. |
-| `--workers` | `int` | `min(8, CPUs)` | Parallel worker threads for rendering raster images. |
+| `--workers` | `int` | `CPUs / 2` | Parallel worker threads for rendering raster images (default: CPU count / 2). |
 | `--force-square` | `flag` | `False` | Force a 1:1 square canvas even if artwork is rectangular. |
 | `--cli` | `path` | *Auto-detected* | Custom path to the `vectorcraft-cli` executable. |
 

@@ -227,7 +227,7 @@ def batch_render_svgs(svg_paths, formats, quality=95, background="white", worker
     if not svg_paths or not formats:
         return
 
-    workers = workers or min(8, os.cpu_count() or 4)
+    workers = workers or max(1, (os.cpu_count() or 4) // 2)
     tasks = []
 
     for svg in svg_paths:
@@ -377,10 +377,11 @@ def main():
     )
     parser.add_argument("inputs", nargs="*", help="Image files, folders, or wildcards to process (default: scans current folder).")
     parser.add_argument("--cli", default=None, help="Path to vectorcraft-cli executable if not in default location.")
-    default_threads = max(1, (os.cpu_count() or 4) - 2)
+    default_trace_threads = max(1, (os.cpu_count() or 4) - 2)
+    default_render_threads = max(1, (os.cpu_count() or 4) // 2)
 
-    parser.add_argument("--trace-workers", type=int, default=default_threads,
-                        help=f"Parallel worker threads for tracing (default: CPU count - 2 = {default_threads}).")
+    parser.add_argument("--trace-workers", type=int, default=default_trace_threads,
+                        help=f"Parallel worker threads for tracing (default: CPU count - 2 = {default_trace_threads}).")
     parser.add_argument("--out-dir", default=None, help="Custom output directory (default: same as input image).")
     parser.add_argument("--svg-dir", default="svg", help="Subfolder name for SVG files (default: 'svg').")
     parser.add_argument("--vc-dir", default="vectorcraft_files", help="Subfolder name for .vectorcraft projects (default: 'vectorcraft_files').")
@@ -403,8 +404,8 @@ def main():
     )
     parser.add_argument("--raster-quality", type=int, default=95, help="JPEG quality 1-100 (default: 95).")
     parser.add_argument("--raster-bg", default="white", help="Canvas background color for transparent SVGs in JPG (default: white).")
-    parser.add_argument("--workers", type=int, default=default_threads,
-                        help=f"Parallel worker threads for rendering (default: CPU count - 2 = {default_threads}).")
+    parser.add_argument("--workers", type=int, default=default_render_threads,
+                        help=f"Parallel worker threads for rendering (default: CPU count / 2 = {default_render_threads}).")
 
     args = parser.parse_args()
 
@@ -438,7 +439,7 @@ def main():
         sys.exit(0)
 
     print(f"Found {len(images)} image(s) to process using VectorCraft CLI ({cli_path})")
-    print(f"Threads : Tracing={args.trace_workers} threads (CPU: {os.cpu_count()} - 2) | Rendering={args.workers} threads")
+    print(f"Threads : Tracing={args.trace_workers} threads (CPU: {os.cpu_count()} - 2) | Rendering={args.workers} threads (CPU: {os.cpu_count()} / 2)")
     print(f"Settings: Min Art Size={args.min_art_size}px, Padding={args.padding}px (Min Canvas={args.min_art_size + args.padding * 2}px), Preset='{args.preset}'")
     print(f"Folders : SVGs -> '{args.svg_dir}/' | VectorCraft projects -> '{args.vc_dir}/'\n")
 

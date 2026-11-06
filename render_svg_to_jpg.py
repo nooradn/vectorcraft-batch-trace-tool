@@ -78,11 +78,12 @@ def main():
         default="white",
         help="Canvas background color for transparent SVGs (default: white)."
     )
+    default_workers = max(1, (os.cpu_count() or 4) // 2)
     parser.add_argument(
         "-w", "--workers",
         type=int,
-        default=min(8, os.cpu_count() or 4),
-        help=f"Number of parallel worker threads (default: {min(8, os.cpu_count() or 4)})."
+        default=default_workers,
+        help=f"Number of parallel worker threads (default: CPU count / 2 = {default_workers})."
     )
 
     args = parser.parse_args()
