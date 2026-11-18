@@ -54,6 +54,81 @@ DEFAULT_CLI_PATHS = [
 SUPPORTED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif"}
 
 
+# Supported Tracing Presets mapping / aliases
+TRACING_PRESETS = {
+    "bw": "Black and White Logo",
+    "color": "Auto Color",
+    "lofi": "Low Fidelity Photo",
+    "hifi": "High Fidelity Photo",
+    "3color": "3 Colors",
+    "6color": "6 Colors",
+    "16color": "16 Colors",
+    "gray": "Shades of Gray",
+    "sketch": "Sketched Art",
+    "silhouette": "Silhouettes",
+    "lineart": "Line Art",
+    "technical": "Technical Drawing",
+    "outline": "Outline",
+    "flatlogo": "Flat Logo",
+}
+
+def prompt_trace_preset():
+    """Interactive prompt allowing the user to select the tracing mode/preset."""
+    print("\n" + "=" * 50)
+    print("Select VectorCraft Tracing Mode / Preset:")
+    print("  [1 / Enter] Black and White Logo (Default B/W)")
+    print("  [2] Auto Color (Standard full color)")
+    print("  [3] Low Fidelity Photo (Lofi - simplified colors, fewer paths)")
+    print("  [4] High Fidelity Photo (Hifi - detailed photo/art)")
+    print("  [5] 16 Colors (Posterized color)")
+    print("  [6] 3 Colors (Minimal color)")
+    print("  [7] Shades of Gray (Grayscale)")
+    print("  [8] Line Art")
+    print("  [9] Silhouettes")
+    print("  [0] Enter custom preset name")
+    print("=" * 50)
+
+    try:
+        choice = input("Choose preset [1-9, 0] (default: 1): ").strip()
+    except Exception:
+        return "Black and White Logo"
+
+    preset_map = {
+        "": "Black and White Logo",
+        "1": "Black and White Logo",
+        "bw": "Black and White Logo",
+        "2": "Auto Color",
+        "color": "Auto Color",
+        "3": "Low Fidelity Photo",
+        "lofi": "Low Fidelity Photo",
+        "4": "High Fidelity Photo",
+        "hifi": "High Fidelity Photo",
+        "5": "16 Colors",
+        "6": "3 Colors",
+        "7": "Shades of Gray",
+        "8": "Line Art",
+        "9": "Silhouettes",
+    }
+
+    if choice in preset_map:
+        return preset_map[choice]
+
+    if choice == "0":
+        try:
+            custom = input("Enter VectorCraft preset name: ").strip()
+            return custom if custom else "Black and White Logo"
+        except Exception:
+            return "Black and White Logo"
+
+    # In case user typed an alias or partial match
+    choice_lower = choice.lower().replace("-", "").replace(" ", "").replace("_", "")
+    for key, val in TRACING_PRESETS.items():
+        if choice_lower == key or choice_lower == val.lower().replace(" ", ""):
+            return val
+
+    return choice
+
+
 def find_vectorcraft_cli(custom_path=None):
     """Locate the VectorCraft CLI executable."""
     if custom_path and os.path.isfile(custom_path):
@@ -387,7 +462,7 @@ def main():
     parser.add_argument("--vc-dir", default="vectorcraft_files", help="Subfolder name for .vectorcraft projects (default: 'vectorcraft_files').")
     parser.add_argument("--min-art-size", type=float, default=3000.0, help="Target size for the smaller side of the art (default: 3000).")
     parser.add_argument("--padding", type=float, default=500.0, help="Padding on each side in px (default: 500, so min canvas side = 4000).")
-    parser.add_argument("--preset", default="Black and White Logo", help="VectorCraft tracing preset (default: 'Black and White Logo').")
+    parser.add_argument("--preset", default=None, help="VectorCraft tracing preset name or alias (e.g. 'bw', 'color', 'lofi', 'hifi', '16color', 'lineart'). Default interactive prompt if omitted.")
     parser.add_argument("--format", choices=["svg", "vectorcraft", "both"], default="both", help="Vector formats to export (default: both).")
     parser.add_argument("--force-square", action="store_true", help="Force 1:1 square canvas even if artwork is rectangular.")
 
@@ -438,9 +513,22 @@ def main():
             input("\nPress Enter to exit...")
         sys.exit(0)
 
+    # Determine tracing preset/mode
+    selected_preset = args.preset
+    if not selected_preset:
+        if is_interactive_double_click or sys.stdin.isatty():
+            selected_preset = prompt_trace_preset()
+        else:
+            selected_preset = "Black and White Logo"
+    else:
+        # Resolve aliases like 'bw', 'color', 'lofi', 'hifi'
+        preset_key = selected_preset.lower().replace("-", "").replace(" ", "").replace("_", "")
+        if preset_key in TRACING_PRESETS:
+            selected_preset = TRACING_PRESETS[preset_key]
+
     print(f"Found {len(images)} image(s) to process using VectorCraft CLI ({cli_path})")
     print(f"Threads : Tracing={args.trace_workers} threads (CPU: {os.cpu_count()} - 2) | Rendering={args.workers} threads (CPU: {os.cpu_count()} / 2)")
-    print(f"Settings: Min Art Size={args.min_art_size}px, Padding={args.padding}px (Min Canvas={args.min_art_size + args.padding * 2}px), Preset='{args.preset}'")
+    print(f"Settings: Min Art Size={args.min_art_size}px, Padding={args.padding}px (Min Canvas={args.min_art_size + args.padding * 2}px), Preset='{selected_preset}'")
     print(f"Folders : SVGs -> '{args.svg_dir}/' | VectorCraft projects -> '{args.vc_dir}/'\n")
 
     # --- Pre-Trace Check for Existing SVGs ---
@@ -503,7 +591,7 @@ def main():
                     vc_dir_name=args.vc_dir,
                     min_art_size=args.min_art_size,
                     padding=args.padding,
-                    preset=args.preset,
+                    preset=selected_preset,
                     out_format=args.format,
                     force_square=args.force_square
                 ): img_path

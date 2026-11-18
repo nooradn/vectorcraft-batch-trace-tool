@@ -1,0 +1,8 @@
+# VectorCraft Batch Trace Tool
+# No third-party packages required!
+# This tool uses strictly Python Standard Library modules (subprocess, json, argparse, tempfile, concurrent.futures, etc.).
+#
+# Requirements:
+# - Python >= 3.8
+# - VectorCraft CLI (vectorcraft-cli)
+# - ImageMagick (optional, for accelerated raster rendering)
