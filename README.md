@@ -45,12 +45,13 @@ An automated batch vectorization and image post-processing tool powered by the *
 ## Quick Start
 
 ### 1. Windows Explorer (Double-Click)
-Place `batch_vectorize.py` (or `batch_vectorize.bat`) into any folder containing your images and double-click it. It will:
-1. Scan the folder for all `*.jpg` and `*.png` images.
-2. Check if SVGs already exist (prompts to skip or re-trace).
-3. Vectorize and transform images into `svg/`.
-4. Move `.vectorcraft` project files into `vectorcraft_files/`.
-5. Optionally prompt to render the SVGs to JPG or PNG.
+Place `batch_vectorize.py` (or `batch_vectorize.bat`) into any folder containing your images and double-click it. It will guide you through an intuitive step-by-step interactive prompt:
+1. **Choose Action:** Trace & generate SVGs or render existing SVGs only.
+2. **Choose Tracing Preset:** B/W, Auto Color, Lofi, Hifi, 16 Colors, Line Art, etc.
+3. **Choose Transparency:** Auto-cut white background, cut outer background only, or keep background.
+4. **Duplicate Detection:** Auto-skips previously processed files unless re-trace is chosen.
+5. **Post-Trace Raster Render:** Optionally renders generated SVGs into high-res JPG or transparent PNG.
+6. **Automatic Project Organization:** Moves `.svg` into `svg/` and `.vectorcraft` projects into `vectorcraft_files/`.
 
 ### 2. Drag & Drop
 Drag one or more image files (or an entire folder) directly onto `batch_vectorize.bat`.
@@ -108,6 +109,12 @@ python batch_vectorize.py "input_folder" --out-dir "dist/vectors" --format svg -
 python batch_vectorize.py --preset color
 python batch_vectorize.py --preset lofi
 python batch_vectorize.py --preset hifi
+
+# Vectorize with outer border white cut only (keep inner white)
+python batch_vectorize.py --remove-bg-mode outer_only
+
+# Skip tracing and render existing SVGs in svg/ to JPG & PNG
+python batch_vectorize.py --action render --render both
 
 # Render both JPG and PNG with 8 parallel worker threads
 python batch_vectorize.py *.jpg --render both --workers 8
