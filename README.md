@@ -78,6 +78,7 @@ python batch_vectorize.py *.jpg *.png
 | Argument | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `inputs` | `str...` | *Current Directory* | Paths to images, folders, or glob patterns. |
+| `--action` | `choice` | *Interactive / trace* | Action to perform: `trace` (vectorize images) or `render` (render existing SVGs only). |
 | `--out-dir` | `path` | *Same as image* | Destination directory for output files. |
 | `--svg-dir` | `str` | `svg` | Subfolder name for `.svg` files. |
 | `--vc-dir` | `str` | `vectorcraft_files` | Subfolder name for `.vectorcraft` project files. |

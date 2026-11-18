@@ -72,6 +72,43 @@ TRACING_PRESETS = {
     "flatlogo": "Flat Logo",
 }
 
+def prompt_action_choice():
+    """Interactive prompt asking what the user wants to do."""
+    print("\n" + "=" * 50)
+    print("What would you like to do?")
+    print("  [1 / Enter] Trace & Generate SVG (from raster images)")
+    print("  [2] Render existing SVGs only (to JPG / PNG)")
+    print("=" * 50)
+    try:
+        choice = input("Choose action [1-2] (default: 1): ").strip()
+    except Exception:
+        return "trace"
+
+    if choice == "2":
+        return "render_only"
+    return "trace"
+
+
+def prompt_transparency_choice():
+    """Interactive prompt asking whether to remove background / cut white color."""
+    print("\n" + "=" * 50)
+    print("Background & Transparency Setting:")
+    print("  [1 / Enter] Transparent background (auto-cut white background)")
+    print("  [2] Outer white only (cuts border background, keeps inner white details)")
+    print("  [3] Keep original background (opaque / no auto-cut)")
+    print("=" * 50)
+    try:
+        choice = input("Choose option [1-3] (default: 1): ").strip()
+    except Exception:
+        return True, "all_white"
+
+    if choice == "2":
+        return True, "outer_only"
+    elif choice in ("3", "no", "keep"):
+        return False, "all_white"
+    return True, "all_white"
+
+
 def prompt_trace_preset():
     """Interactive prompt allowing the user to select the tracing mode/preset."""
     print("\n" + "=" * 50)
@@ -480,6 +517,10 @@ def main():
     parser.add_argument("--format", choices=["svg", "vectorcraft", "both"], default="both", help="Vector formats to export (default: both).")
     parser.add_argument("--force-square", action="store_true", help="Force 1:1 square canvas even if artwork is rectangular.")
 
+    # Mode selection
+    parser.add_argument("--action", choices=["trace", "render"], default=None,
+                        help="Action to perform: 'trace' (vectorize images) or 'render' (render existing SVGs only). Default interactive prompt if omitted.")
+
     # Background removal options
     parser.add_argument("--no-remove-bg", action="store_true", help="Keep background (do not remove white background).")
     parser.add_argument("--remove-bg-mode", choices=["all_white", "outer_only"], default="all_white",
@@ -532,10 +573,73 @@ def main():
             input("\nPress Enter to exit...")
         sys.exit(0)
 
+    # Determine action (Trace vs Render Only)
+    is_interactive = is_interactive_double_click or sys.stdin.isatty()
+    action = args.action
+    if not action:
+        if is_interactive:
+            action = prompt_action_choice()
+        else:
+            action = "trace"
+
+    # --- ACTION: Render Existing SVGs Only ---
+    if action in ("render", "render_only"):
+        target_dir = args.out_dir or SCRIPT_DIR
+        candidate_svg_folders = [
+            os.path.join(target_dir, args.svg_dir),
+            target_dir
+        ]
+        found_svgs = []
+        for s_folder in candidate_svg_folders:
+            if os.path.isdir(s_folder):
+                for f in sorted(os.listdir(s_folder)):
+                    if f.lower().endswith(".svg"):
+                        found_svgs.append(os.path.abspath(os.path.join(s_folder, f)))
+        found_svgs = sorted(list(set(found_svgs)))
+
+        if not found_svgs:
+            print(f"No existing .svg files found to render in:\n  {candidate_svg_folders[0]}")
+            if is_interactive_double_click:
+                input("\nPress Enter to exit...")
+            sys.exit(0)
+
+        print(f"Found {len(found_svgs)} existing SVG file(s) for rendering.")
+        render_mode = args.render
+        if render_mode is None or render_mode == "prompt":
+            render_formats = prompt_render_choice()
+        elif render_mode == "jpg":
+            render_formats = ["jpg"]
+        elif render_mode == "png":
+            render_formats = ["png"]
+        elif render_mode == "both":
+            render_formats = ["jpg", "png"]
+        else:
+            render_formats = []
+
+        if render_formats:
+            batch_render_svgs(
+                svg_paths=found_svgs,
+                formats=render_formats,
+                quality=args.raster_quality,
+                background=args.raster_bg,
+                workers=args.workers,
+                cli_path=cli_path,
+                base_out_dir=args.out_dir,
+                overwrite=args.overwrite,
+                skip_existing=args.skip_existing
+            )
+        if is_interactive_double_click:
+            try:
+                input("\nPress Enter to exit...")
+            except Exception:
+                pass
+        sys.exit(0)
+
+    # --- ACTION: Trace & Generate SVG ---
     # Determine tracing preset/mode
     selected_preset = args.preset
     if not selected_preset:
-        if is_interactive_double_click or sys.stdin.isatty():
+        if is_interactive:
             selected_preset = prompt_trace_preset()
         else:
             selected_preset = "Black and White Logo"
@@ -545,7 +649,14 @@ def main():
         if preset_key in TRACING_PRESETS:
             selected_preset = TRACING_PRESETS[preset_key]
 
-    bg_status = "Disabled (keep background)" if args.no_remove_bg else f"Enabled ({args.remove_bg_mode})"
+    # Determine background removal / transparency
+    remove_bg = not args.no_remove_bg
+    remove_bg_mode = args.remove_bg_mode
+    if is_interactive and not args.no_remove_bg and args.remove_bg_mode == "all_white":
+        # Interactive prompt for transparency if user didn't specify CLI flags
+        remove_bg, remove_bg_mode = prompt_transparency_choice()
+
+    bg_status = "Disabled (keep background)" if not remove_bg else f"Enabled ({remove_bg_mode})"
     print(f"Found {len(images)} image(s) to process using VectorCraft CLI ({cli_path})")
     print(f"Threads : Tracing={args.trace_workers} threads (CPU: {os.cpu_count()} - 4) | Rendering={args.workers} threads (CPU: {os.cpu_count()} / 2)")
     print(f"Settings: Min Art Size={args.min_art_size}px, Padding={args.padding}px (Min Canvas={args.min_art_size + args.padding * 2}px), Preset='{selected_preset}', Remove BG={bg_status}")
@@ -629,8 +740,8 @@ def main():
                     preset=selected_preset,
                     out_format=args.format,
                     force_square=args.force_square,
-                    remove_bg=not args.no_remove_bg,
-                    remove_bg_mode=args.remove_bg_mode
+                    remove_bg=remove_bg,
+                    remove_bg_mode=remove_bg_mode
                 ): img_path
                 for img_path in images_to_trace
             }
