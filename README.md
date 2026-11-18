@@ -10,7 +10,7 @@ An automated batch vectorization and image post-processing tool powered by the *
 
 ## Features
 
-- **High-Performance Concurrent Tracing:** Multithreaded batch vectorization defaulting to `CPU count - 2` threads (e.g. 10 threads on a 12-core CPU), dramatically cutting down processing time.
+- **High-Performance Concurrent Tracing:** Multithreaded batch vectorization defaulting to `CPU count - 4` threads (e.g. 8 threads on a 12-core CPU), keeping the system completely responsive while maximizing throughput.
 - **Multiple Tracing Modes & Presets:** Choose interactively between Black & White, Auto Color, Low Fidelity Photo (Lofi), High Fidelity Photo (Hifi), 16 Colors, Shades of Gray, Line Art, and more, or specify presets directly via CLI aliases.
 - **Automatic Background Removal:** Automatically ignores white backgrounds during vectorization so subjects are exported with clean transparency. Options available to remove all white or only outer border white (`--remove-bg-mode outer_only`), or retain white backgrounds with `--no-remove-bg`.
 - **Smart Border Trimming:** Tightly crops empty margins around the illustration bounds before resizing.
@@ -81,7 +81,7 @@ python batch_vectorize.py *.jpg *.png
 | `--out-dir` | `path` | *Same as image* | Destination directory for output files. |
 | `--svg-dir` | `str` | `svg` | Subfolder name for `.svg` files. |
 | `--vc-dir` | `str` | `vectorcraft_files` | Subfolder name for `.vectorcraft` project files. |
-| `--trace-workers` | `int` | `CPUs - 2` | Parallel worker threads for SVG tracing (default: CPU count - 2). |
+| `--trace-workers` | `int` | `CPUs - 4` | Parallel worker threads for SVG tracing (default: CPU count - 4). |
 | `--min-art-size` | `float` | `3000.0` | Target size (in px) for the shorter side of the artwork. |
 | `--padding` | `float` | `500.0` | Margin (in px) added to each side (`top`, `bottom`, `left`, `right`). |
 | `--preset` | `str` | *Interactive / bw* | VectorCraft preset name or alias (`bw`, `color`, `lofi`, `hifi`, `16color`, `lineart`, etc.). |
