@@ -109,6 +109,34 @@ def prompt_transparency_choice():
     return True, "all_white"
 
 
+def prompt_smoothing_choice():
+    """Interactive prompt asking for path smoothing & simplification preferences."""
+    print("\n" + "=" * 50)
+    print("Vector Smoothing & Curve Optimization:")
+    print("  [1 / Enter] Medium Smoothing (Recommended: smooths jagged edges, level 50)")
+    print("  [2] High Smoothing (Maximum curve rounding, level 80)")
+    print("  [3] Light Smoothing (Subtle cleanup, level 25)")
+    print("  [4] Auto-Smooth + Simplify (Reduces anchor points for clean lines)")
+    print("  [0] Off (Raw trace without smoothing)")
+    print("=" * 50)
+    try:
+        choice = input("Choose option [0-4] (default: 1): ").strip()
+    except Exception:
+        return 50, False
+
+    if choice in ("1", ""):
+        return 50, False
+    elif choice == "2":
+        return 80, False
+    elif choice == "3":
+        return 25, False
+    elif choice == "4":
+        return 50, True
+    elif choice in ("0", "off", "none", "no"):
+        return 0, False
+    return 50, False
+
+
 def prompt_trace_preset():
     """Interactive prompt allowing the user to select the tracing mode/preset."""
     print("\n" + "=" * 50)
@@ -202,11 +230,14 @@ def move_existing_files(folder, extension, target_subfolder):
 def process_image(cli_path, input_path, output_dir=None, svg_dir_name="svg",
                   vc_dir_name="vectorcraft_files", min_art_size=3000.0, padding=500.0,
                   preset="Black and White Logo", out_format="both", force_square=False,
-                  remove_bg=True, remove_bg_mode="all_white"):
+                  remove_bg=True, remove_bg_mode="all_white",
+                  smooth_level=0, simplify=False):
     """
     Vectorize an image, trim empty borders, scale proportionally, and pad the artboard.
     remove_bg: bool - whether to remove white background during trace.
     remove_bg_mode: 'all_white' (ignore all white) or 'outer_only' (ignore white reaching image edges).
+    smooth_level: int (0 to 100) - level of curve smoothing (0 = off).
+    simplify: bool - whether to optimize/reduce anchor points via path simplification.
     Returns (success: bool, svg_path: str or None, message: str).
     """
     input_path = os.path.abspath(input_path)
@@ -238,13 +269,25 @@ def process_image(cli_path, input_path, output_dir=None, svg_dir_name="svg",
                 "ignoreWhite": False
             }
 
-        # Step 1: Trace raster image and fit artboard to selection (trim margins)
+        # Step 1: Trace raster image, apply optional smoothing/simplifying, and fit artboard to selection
         cmd1 = [
             {"command": "select.all"},
-            {"command": "imageTrace.makeAndExpand", "params": trace_params},
+            {"command": "imageTrace.makeAndExpand", "params": trace_params}
+        ]
+        if smooth_level > 0:
+            cmd1.extend([
+                {"command": "select.all"},
+                {"command": "object.path.smooth", "params": {"level": float(smooth_level)}}
+            ])
+        if simplify:
+            cmd1.extend([
+                {"command": "select.all"},
+                {"command": "object.path.simplify", "params": {"level": 50.0}}
+            ])
+        cmd1.extend([
             {"command": "select.all"},
             {"command": "artboard.fitToSelection"}
-        ]
+        ])
         with open(cmd1_path, "w", encoding="utf-8") as f:
             json.dump(cmd1, f)
 
@@ -526,6 +569,11 @@ def main():
     parser.add_argument("--remove-bg-mode", choices=["all_white", "outer_only"], default="all_white",
                         help="Background removal strategy: 'all_white' (default: remove all white) or 'outer_only' (remove only outer white reaching borders).")
 
+    # Smoothing and Curve Optimization options
+    parser.add_argument("--smooth", type=int, default=None,
+                        help="Path smoothing level 0-100 (default: 50 in interactive mode, 0 in headless unless specified).")
+    parser.add_argument("--simplify", action="store_true", help="Reduce excess anchor points to clean up complex paths.")
+
     # Duplicate check & overwrite options
     parser.add_argument("--overwrite", action="store_true", help="Automatically overwrite and re-trace existing SVGs without prompt.")
     parser.add_argument("--skip-existing", action="store_true", help="Automatically skip images that already have SVGs without prompt.")
@@ -656,10 +704,24 @@ def main():
         # Interactive prompt for transparency if user didn't specify CLI flags
         remove_bg, remove_bg_mode = prompt_transparency_choice()
 
+    # Determine smoothing & simplify settings
+    smooth_level = args.smooth
+    simplify_paths = args.simplify
+    if smooth_level is None:
+        if is_interactive:
+            smooth_level, simplify_paths = prompt_smoothing_choice()
+        else:
+            smooth_level = 0
+            simplify_paths = False
+
     bg_status = "Disabled (keep background)" if not remove_bg else f"Enabled ({remove_bg_mode})"
+    smooth_status = f"Level {smooth_level}" if smooth_level > 0 else "Off"
+    if simplify_paths:
+        smooth_status += " + Simplify"
+
     print(f"Found {len(images)} image(s) to process using VectorCraft CLI ({cli_path})")
     print(f"Threads : Tracing={args.trace_workers} threads (CPU: {os.cpu_count()} - 4) | Rendering={args.workers} threads (CPU: {os.cpu_count()} / 2)")
-    print(f"Settings: Min Art Size={args.min_art_size}px, Padding={args.padding}px (Min Canvas={args.min_art_size + args.padding * 2}px), Preset='{selected_preset}', Remove BG={bg_status}")
+    print(f"Settings: Min Art Size={args.min_art_size}px, Padding={args.padding}px (Min Canvas={args.min_art_size + args.padding * 2}px), Preset='{selected_preset}', Remove BG={bg_status}, Smoothing={smooth_status}")
     print(f"Folders : SVGs -> '{args.svg_dir}/' | VectorCraft projects -> '{args.vc_dir}/'\n")
 
     # --- Pre-Trace Check for Existing Outputs (SVG & VectorCraft files) ---
@@ -741,7 +803,9 @@ def main():
                     out_format=args.format,
                     force_square=args.force_square,
                     remove_bg=remove_bg,
-                    remove_bg_mode=remove_bg_mode
+                    remove_bg_mode=remove_bg_mode,
+                    smooth_level=smooth_level,
+                    simplify=simplify_paths
                 ): img_path
                 for img_path in images_to_trace
             }
