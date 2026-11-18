@@ -16,7 +16,7 @@ An automated batch vectorization and image post-processing tool powered by the *
 - **Smart Border Trimming:** Tightly crops empty margins around the illustration bounds before resizing.
 - **Proportional Scaling:** Resizes artwork so its shorter side reaches a target size (default: `3000 px`), preserving the original aspect ratio without distortion.
 - **Custom Canvas Margins:** Adds padding on each side (default: `500 px`), guaranteeing a final canvas of at least **`4000 px`** on the shorter side, and **`>= 4000 px`** on the longer side.
-- **Duplicate Checking & Skip (No Redundant Work):** Detects existing outputs before tracing and rendering. Prompts the user to skip existing files (default = render only delta/missing) or re-process/overwrite them.
+- **Duplicate Checking & Auto-Skip:** Automatically detects if `.svg` and `.vectorcraft` files already exist for an image. By default, it auto-skips previously processed images so only delta/missing files are traced (overridable with `--overwrite` or prompt choice 2).
 - **Post-Trace Raster Rendering (JPG / PNG):** Interactive prompt or CLI flags to automatically render generated SVGs into high-res JPGs (white background, quality 95) or transparent PNGs using multithreaded ImageMagick (`magick`) or VectorCraft CLI. Only renders missing images by default.
 - **Project File Organization:** Automatically isolates `.svg` exports into an `svg/` subfolder and `.vectorcraft` project files into a `vectorcraft_files/` folder, keeping your root directory clean.
 - **Windows Explorer Friendly:**
@@ -88,8 +88,8 @@ python batch_vectorize.py *.jpg *.png
 | `--format` | `choice` | `both` | Formats to export: `svg`, `vectorcraft`, or `both`. |
 | `--no-remove-bg` | `flag` | `False` | Keep white background (disable automatic background removal). |
 | `--remove-bg-mode` | `choice` | `all_white` | Background removal strategy: `all_white` (default) or `outer_only` (preserves inner white details). |
-| `--overwrite` | `flag` | `False` | Overwrite and re-trace existing SVGs without prompting. |
-| `--skip-existing` | `flag` | `False` | Skip images that already have SVGs without prompting. |
+| `--overwrite` | `flag` | `False` | Overwrite and re-trace existing files without prompting. |
+| `--skip-existing` | `flag` | `False` | Automatically skip images that already have SVG and/or .vectorcraft files without prompting. |
 | `--render` | `choice` | *prompt (interactive) / none* | Post-trace raster render mode: `prompt`, `jpg`, `png`, `both`, `none`. |
 | `--raster-quality` | `int` | `95` | JPEG quality (1–100) for JPG raster outputs. |
 | `--raster-bg` | `str` | `white` | Canvas background color for transparent SVGs in JPG format. |

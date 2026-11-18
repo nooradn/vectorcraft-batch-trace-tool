@@ -551,20 +551,31 @@ def main():
     print(f"Settings: Min Art Size={args.min_art_size}px, Padding={args.padding}px (Min Canvas={args.min_art_size + args.padding * 2}px), Preset='{selected_preset}', Remove BG={bg_status}")
     print(f"Folders : SVGs -> '{args.svg_dir}/' | VectorCraft projects -> '{args.vc_dir}/'\n")
 
-    # --- Pre-Trace Check for Existing SVGs ---
-    existing_svg_map = {}
+    # --- Pre-Trace Check for Existing Outputs (SVG & VectorCraft files) ---
+    existing_map = {}
     for img_path in images:
         base_name = Path(img_path).stem
         parent_dir = args.out_dir or os.path.dirname(img_path)
         svg_path = os.path.join(parent_dir, args.svg_dir, f"{base_name}.svg")
-        if os.path.isfile(svg_path):
-            existing_svg_map[img_path] = svg_path
+        vc_path = os.path.join(parent_dir, args.vc_dir, f"{base_name}.vectorcraft")
+
+        # Determine whether the required output(s) based on args.format already exist
+        if args.format == "svg":
+            is_complete = os.path.isfile(svg_path)
+        elif args.format == "vectorcraft":
+            is_complete = os.path.isfile(vc_path)
+        else:  # 'both'
+            is_complete = os.path.isfile(svg_path) and os.path.isfile(vc_path)
+
+        if is_complete:
+            existing_map[img_path] = svg_path
 
     images_to_trace = list(images)
-    if existing_svg_map:
-        count_exist = len(existing_svg_map)
+    if existing_map:
+        count_exist = len(existing_map)
         print("=" * 50)
-        print(f"Notice: {count_exist}/{len(images)} image(s) already have an SVG in '{args.svg_dir}/'.")
+        target_desc = "SVG and .vectorcraft files" if args.format == "both" else f"{args.format.upper()} files"
+        print(f"Notice: {count_exist}/{len(images)} image(s) already have existing {target_desc}.")
 
         retrace = False
         if args.overwrite:
@@ -572,9 +583,10 @@ def main():
             print("Flag --overwrite detected: will re-trace and overwrite all.")
         elif args.skip_existing:
             retrace = False
-            print("Flag --skip-existing detected: skipping existing SVGs.")
-        else:
-            print("  [1 / Enter] Skip existing (default)")
+            print("Flag --skip-existing detected: automatically skipping already-generated files.")
+        elif is_interactive_double_click or sys.stdin.isatty():
+            # In interactive mode, auto-skip by default unless user chooses to re-trace
+            print("  [1 / Enter] Auto-skip existing (default)")
             print("  [2] Re-trace and overwrite")
             print("=" * 50)
             try:
@@ -582,16 +594,19 @@ def main():
             except Exception:
                 choice = ""
             retrace = (choice == "2")
+        else:
+            # Non-interactive without flags: auto-skip by default
+            retrace = False
 
         if not retrace:
-            images_to_trace = [img for img in images if img not in existing_svg_map]
-            print(f"Skipping {count_exist} already-traced file(s). {len(images_to_trace)} remaining to trace.\n")
+            images_to_trace = [img for img in images if img not in existing_map]
+            print(f"Auto-skipping {count_exist} already-processed file(s). {len(images_to_trace)} remaining to trace.\n")
         else:
-            print("Re-tracing all images (overwriting existing SVGs).\n")
+            print("Re-tracing all images (overwriting existing outputs).\n")
 
     successful_svgs = []
-    # Include existing SVGs if skipped so they can still be rendered if desired
-    for img_path, svg_p in existing_svg_map.items():
+    # Include existing SVGs if skipped so they can still be rendered to raster if desired
+    for img_path, svg_p in existing_map.items():
         if img_path not in images_to_trace and os.path.isfile(svg_p):
             successful_svgs.append(svg_p)
 
