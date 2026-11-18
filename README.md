@@ -12,6 +12,7 @@ An automated batch vectorization and image post-processing tool powered by the *
 
 - **High-Performance Concurrent Tracing:** Multithreaded batch vectorization defaulting to `CPU count - 2` threads (e.g. 10 threads on a 12-core CPU), dramatically cutting down processing time.
 - **Multiple Tracing Modes & Presets:** Choose interactively between Black & White, Auto Color, Low Fidelity Photo (Lofi), High Fidelity Photo (Hifi), 16 Colors, Shades of Gray, Line Art, and more, or specify presets directly via CLI aliases.
+- **Automatic Background Removal:** Automatically ignores white backgrounds during vectorization so subjects are exported with clean transparency. Options available to remove all white or only outer border white (`--remove-bg-mode outer_only`), or retain white backgrounds with `--no-remove-bg`.
 - **Smart Border Trimming:** Tightly crops empty margins around the illustration bounds before resizing.
 - **Proportional Scaling:** Resizes artwork so its shorter side reaches a target size (default: `3000 px`), preserving the original aspect ratio without distortion.
 - **Custom Canvas Margins:** Adds padding on each side (default: `500 px`), guaranteeing a final canvas of at least **`4000 px`** on the shorter side, and **`>= 4000 px`** on the longer side.
@@ -85,6 +86,8 @@ python batch_vectorize.py *.jpg *.png
 | `--padding` | `float` | `500.0` | Margin (in px) added to each side (`top`, `bottom`, `left`, `right`). |
 | `--preset` | `str` | *Interactive / bw* | VectorCraft preset name or alias (`bw`, `color`, `lofi`, `hifi`, `16color`, `lineart`, etc.). |
 | `--format` | `choice` | `both` | Formats to export: `svg`, `vectorcraft`, or `both`. |
+| `--no-remove-bg` | `flag` | `False` | Keep white background (disable automatic background removal). |
+| `--remove-bg-mode` | `choice` | `all_white` | Background removal strategy: `all_white` (default) or `outer_only` (preserves inner white details). |
 | `--overwrite` | `flag` | `False` | Overwrite and re-trace existing SVGs without prompting. |
 | `--skip-existing` | `flag` | `False` | Skip images that already have SVGs without prompting. |
 | `--render` | `choice` | *prompt (interactive) / none* | Post-trace raster render mode: `prompt`, `jpg`, `png`, `both`, `none`. |

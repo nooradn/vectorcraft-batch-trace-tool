@@ -164,9 +164,12 @@ def move_existing_files(folder, extension, target_subfolder):
 
 def process_image(cli_path, input_path, output_dir=None, svg_dir_name="svg",
                   vc_dir_name="vectorcraft_files", min_art_size=3000.0, padding=500.0,
-                  preset="Black and White Logo", out_format="both", force_square=False):
+                  preset="Black and White Logo", out_format="both", force_square=False,
+                  remove_bg=True, remove_bg_mode="all_white"):
     """
     Vectorize an image, trim empty borders, scale proportionally, and pad the artboard.
+    remove_bg: bool - whether to remove white background during trace.
+    remove_bg_mode: 'all_white' (ignore all white) or 'outer_only' (ignore white reaching image edges).
     Returns (success: bool, svg_path: str or None, message: str).
     """
     input_path = os.path.abspath(input_path)
@@ -187,10 +190,21 @@ def process_image(cli_path, input_path, output_dir=None, svg_dir_name="svg",
         cmd1_path = os.path.join(tmp_dir, "cmd1.json")
         cmd2_path = os.path.join(tmp_dir, "cmd2.json")
 
+        trace_params = {"preset": preset, "enhanced": True}
+        if remove_bg:
+            trace_params["params"] = {
+                "ignoreWhite": True,
+                "ignoreBackground": (remove_bg_mode == "outer_only")
+            }
+        else:
+            trace_params["params"] = {
+                "ignoreWhite": False
+            }
+
         # Step 1: Trace raster image and fit artboard to selection (trim margins)
         cmd1 = [
             {"command": "select.all"},
-            {"command": "imageTrace.makeAndExpand", "params": {"preset": preset, "enhanced": True}},
+            {"command": "imageTrace.makeAndExpand", "params": trace_params},
             {"command": "select.all"},
             {"command": "artboard.fitToSelection"}
         ]
@@ -466,6 +480,11 @@ def main():
     parser.add_argument("--format", choices=["svg", "vectorcraft", "both"], default="both", help="Vector formats to export (default: both).")
     parser.add_argument("--force-square", action="store_true", help="Force 1:1 square canvas even if artwork is rectangular.")
 
+    # Background removal options
+    parser.add_argument("--no-remove-bg", action="store_true", help="Keep background (do not remove white background).")
+    parser.add_argument("--remove-bg-mode", choices=["all_white", "outer_only"], default="all_white",
+                        help="Background removal strategy: 'all_white' (default: remove all white) or 'outer_only' (remove only outer white reaching borders).")
+
     # Duplicate check & overwrite options
     parser.add_argument("--overwrite", action="store_true", help="Automatically overwrite and re-trace existing SVGs without prompt.")
     parser.add_argument("--skip-existing", action="store_true", help="Automatically skip images that already have SVGs without prompt.")
@@ -526,9 +545,10 @@ def main():
         if preset_key in TRACING_PRESETS:
             selected_preset = TRACING_PRESETS[preset_key]
 
+    bg_status = "Disabled (keep background)" if args.no_remove_bg else f"Enabled ({args.remove_bg_mode})"
     print(f"Found {len(images)} image(s) to process using VectorCraft CLI ({cli_path})")
     print(f"Threads : Tracing={args.trace_workers} threads (CPU: {os.cpu_count()} - 2) | Rendering={args.workers} threads (CPU: {os.cpu_count()} / 2)")
-    print(f"Settings: Min Art Size={args.min_art_size}px, Padding={args.padding}px (Min Canvas={args.min_art_size + args.padding * 2}px), Preset='{selected_preset}'")
+    print(f"Settings: Min Art Size={args.min_art_size}px, Padding={args.padding}px (Min Canvas={args.min_art_size + args.padding * 2}px), Preset='{selected_preset}', Remove BG={bg_status}")
     print(f"Folders : SVGs -> '{args.svg_dir}/' | VectorCraft projects -> '{args.vc_dir}/'\n")
 
     # --- Pre-Trace Check for Existing SVGs ---
@@ -593,7 +613,9 @@ def main():
                     padding=args.padding,
                     preset=selected_preset,
                     out_format=args.format,
-                    force_square=args.force_square
+                    force_square=args.force_square,
+                    remove_bg=not args.no_remove_bg,
+                    remove_bg_mode=args.remove_bg_mode
                 ): img_path
                 for img_path in images_to_trace
             }
