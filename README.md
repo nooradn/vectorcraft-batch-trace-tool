@@ -136,14 +136,15 @@ python render_svg_to_jpg.py --input "dist/vectors" --quality 95 --workers 8
 ```mermaid
 flowchart LR
     A["Input Image\n(.jpg, .png)"] --> B["VectorCraft Trace\n(imageTrace.makeAndExpand)"]
-    B --> C["Trim Margins\n(artboard.fitToSelection)"]
-    C --> D["Proportional Scaling\n(min side = 3000px)"]
-    D --> E["Artboard Expansion\n(+500px padding each side)"]
-    E --> F["Center Alignment\n(object.align)"]
-    F --> G["Output Files:\n- .svg (in folder)\n- .vectorcraft (in subfolder)"]
+    B --> C["Native Path Optimization\n(object.path.smooth & simplify)"]
+    C --> D["Trim Margins\n(artboard.fitToSelection)"]
+    D --> E["Proportional Scaling\n(min side = 3000px)"]
+    E --> F["Artboard Expansion\n(+500px padding each side)"]
+    F --> G["Center Alignment\n(object.align)"]
+    G --> H["Output Files:\n- .svg (in folder)\n- .vectorcraft (in subfolder)"]
 ```
 
-1. **Phase 1 (Vectorize & Trim):** VectorCraft traces the input raster using high-fidelity edge detection, then trims the artboard directly to the artwork bounds.
+1. **Phase 1 (Vectorize & Native Smoothing):** VectorCraft traces the input raster using high-fidelity edge detection, converts pixels to paths, and natively executes `object.path.smooth` and `object.path.simplify` at the vector/Bézier level to eliminate pixel jaggies before trimming the artboard directly to the artwork bounds.
 2. **Phase 2 (Dimension Calculation):** The script queries VectorCraft for the trimmed bounding box and calculates proportional scaling factors so the shorter side matches `--min-art-size`.
 3. **Phase 3 (Artboard & Alignment):** Resizes the art with `scaleArt: true`, expands the artboard by `padding * 2` on both axes, and centers the artwork.
 4. **Phase 4 (Organization):** Exports `.svg` and archives the editable `.vectorcraft` project file into the `vectorcraft_files/` directory.
